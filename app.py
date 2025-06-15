@@ -122,6 +122,7 @@ def check_conditions(df):
 # عرض النتائج
 def display_results(df, results, green, red, blue):
     st.title("📊 تحليل نتائج Crash على Stake")
+    st.markdown("### 👋 هذا الإصدار الجديد من البوت ✅")
     st.markdown("### ✅ عدد تحقق الشروط (بشكل عام):")
     for k, v in results.items():
         st.markdown(f"- {k}: <span style='color:white'>{v}</span>", unsafe_allow_html=True)
