@@ -19,7 +19,10 @@ condition_lengths = {
 def fetch_crash_data(limit=50000, batch_size=1000):
     all_data = []
     url = "https://api.stake.com/graphql"
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0"
+    }
 
     for i in range(0, limit, batch_size):
         query = """
@@ -27,22 +30,40 @@ def fetch_crash_data(limit=50000, batch_size=1000):
           crashRounds(first: %d, orderBy: id, orderDirection: desc) {
             id
             multiplier
+            createdAt
           }
         }
         """ % batch_size
 
-        response = requests.post(url, json={"query": query}, headers=headers)
-        if response.status_code != 200:
-            st.error("فشل في تحميل البيانات من Stake")
+        try:
+            response = requests.post(url, json={"query": query}, headers=headers)
+            response.raise_for_status()
+            data_json = response.json()
+
+            if "data" not in data_json or "crashRounds" not in data_json["data"]:
+                st.warning("⚠️ الرد من الخادم لا يحتوي على crashRounds.")
+                continue
+
+            data = data_json["data"]["crashRounds"]
+            if not data:
+                break
+            all_data.extend(data)
+            time.sleep(0.2)
+
+        except Exception as e:
+            st.error(f"❌ فشل في تحميل البيانات: {str(e)}")
             break
 
-        data = response.json()["data"]["crashRounds"]
-        if not data:
-            break
-        all_data.extend(data)
-        time.sleep(0.3)  # يمكن تقليلها لاحقًا
+    if not all_data:
+        return pd.DataFrame()
 
     df = pd.DataFrame(all_data)
+
+    required_cols = {"multiplier", "id"}
+    if not required_cols.issubset(df.columns):
+        st.error("❌ البيانات المحملة لا تحتوي على الأعمدة المطلوبة.")
+        return pd.DataFrame()
+
     df["multiplier"] = df["multiplier"].astype(float)
     return df[::-1].reset_index(drop=True)
 
@@ -71,57 +92,21 @@ def check_conditions(df):
 
             seq = values[i:i+length]
 
+            match = False
             if key == "1.00 مرتين" and all(x == 1.00 for x in seq):
-                results[key] += 1
-                future = values[i+length:i+length+140]
-                if 1.05 in future and all(x >= 1.05 for x in future):
-                    blue.append((i, key))
-                elif 1.05 in future:
-                    green.append((i, key))
-                else:
-                    red.append((i, key))
-
+                match = True
             elif key == "<1.05 مرتين" and all(x < 1.05 for x in seq):
-                results[key] += 1
-                future = values[i+length:i+length+140]
-                if 1.05 in future and all(x >= 1.05 for x in future):
-                    blue.append((i, key))
-                elif 1.05 in future:
-                    green.append((i, key))
-                else:
-                    red.append((i, key))
-
+                match = True
             elif key == "<1.05 ثلاث مرات" and all(x < 1.05 for x in seq):
-                results[key] += 1
-                future = values[i+length:i+length+140]
-                if 1.05 in future and all(x >= 1.05 for x in future):
-                    blue.append((i, key))
-                elif 1.05 in future:
-                    green.append((i, key))
-                else:
-                    red.append((i, key))
-
+                match = True
             elif key == "<1.20 ثلاث مرات" and all(x < 1.20 for x in seq):
-                results[key] += 1
-                future = values[i+length:i+length+140]
-                if 1.05 in future and all(x >= 1.05 for x in future):
-                    blue.append((i, key))
-                elif 1.05 in future:
-                    green.append((i, key))
-                else:
-                    red.append((i, key))
-
+                match = True
             elif key == "<1.20 أربع مرات" and all(x < 1.20 for x in seq):
-                results[key] += 1
-                future = values[i+length:i+length+140]
-                if 1.05 in future and all(x >= 1.05 for x in future):
-                    blue.append((i, key))
-                elif 1.05 in future:
-                    green.append((i, key))
-                else:
-                    red.append((i, key))
-
+                match = True
             elif key == "<2.00 أحد عشر مرة" and all(x < 2.00 for x in seq):
+                match = True
+
+            if match:
                 results[key] += 1
                 future = values[i+length:i+length+140]
                 if 1.05 in future and all(x >= 1.05 for x in future):
@@ -163,8 +148,8 @@ def display_results(df, results, green, red, blue):
 # التشغيل
 def main():
     df = fetch_crash_data()
-    if "multiplier" not in df.columns or "id" not in df.columns:
-        st.error("البيانات غير صالحة. تأكد من الاتصال أو شكل البيانات.")
+    if df.empty:
+        st.error("🚫 لا توجد بيانات لتحليلها.")
         return
 
     results, green, red, blue = check_conditions(df)
