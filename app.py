@@ -170,5 +170,5 @@ def main():
     results, green, red, blue = check_conditions(df)
     display_results(df, results, green, red, blue)
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     main()
